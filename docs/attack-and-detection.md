@@ -79,6 +79,10 @@ Entrambe le regole di detection configurate in Microsoft Sentinel si sono attiva
 
 ![Dettaglio dell'incidente con timeline e storia dell'attacco](screenshots/incident-detail.png)
 
+Dettaglio del secondo incidente ("Query esplorative sul database honeypot"), con la spiegazione automatica generata da Microsoft Defender ("Cos'è successo") e la query raw rilevata (`SHOW TABLES FROM corpdb`):
+
+![Dettaglio secondo incidente con spiegazione automatica](screenshots/incident-2-detail.png)
+
 ## 6. Contenimento
 
 Verifica che la chiusura delle regole NSG abbia effettivamente isolato la VM:
