@@ -1,8 +1,8 @@
-# Attacco e Detection — Evidenza tecnica dettagliata
+# Attack and Detection — Detailed Technical Evidence
 
-## 1. Ricognizione
+## 1. Reconnaissance
 
-Scansione delle porte esposte dalla VM honeypot (dalla Kali Linux, verso l'IP pubblico della VM):
+Scan of the ports exposed by the honeypot VM (from Kali Linux, against the VM's public IP):
 
 ```bash
 $ nmap -sV -O -p 3306,3389 74.241.132.174
@@ -17,19 +17,19 @@ Running (JUST GUESSING): Microsoft Windows 11|10 (90%)
 OS CPE: cpe:/o:microsoft:windows_11
 ```
 
-**Risultato**: identificati MySQL 8.0.46 e sistema operativo Windows 11 con buona confidenza (90%), senza alcuna autenticazione necessaria per ottenere queste informazioni.
+**Result**: identified MySQL 8.0.46 and the Windows 11 operating system with good confidence (90%), with no authentication needed to obtain this information.
 
 ## 2. Exploitation
 
-Tentativo di connessione diretta a MySQL come root, sfruttando la configurazione vulnerabile (utente root senza password, accessibile da remoto):
+Attempt to connect directly to MySQL as root, exploiting the vulnerable configuration (root user with no password, remotely accessible):
 
 ```bash
 $ mysql -h 74.241.132.174 -u root --skip-password --skip-ssl
 ```
 
-**Risultato**: accesso immediato, senza alcun brute force necessario. Il semplice fatto che il database fosse esposto con un account amministrativo privo di password ha reso l'exploitation istantanea — uno degli scenari di breach più comuni e più facilmente prevenibili nel mondo reale.
+**Result**: immediate access, with no brute force needed. The mere fact that the database was exposed with a passwordless administrative account made the exploitation instantaneous — one of the most common and most easily preventable breach scenarios in the real world.
 
-## 3. Scoperta dati (Discovery)
+## 3. Data Discovery
 
 ```sql
 SHOW DATABASES;
@@ -39,15 +39,15 @@ SELECT * FROM credentials;
 SELECT * FROM payments;
 ```
 
-Individuata la tabella `credentials` con 5 voci di credenziali in chiaro per servizi interni fittizi (pannello admin, FTP, backup, email, VPN).
+Found the `credentials` table with 5 entries of plaintext credentials for fictitious internal services (admin panel, FTP, backup, email, VPN).
 
-## 4. Esfiltrazione
+## 4. Exfiltration
 
 ```bash
 $ mysqldump -h 74.241.132.174 -u root --skip-password --skip-ssl corpdb > corpdb_esfiltrato.sql
 ```
 
-Estratto dell'output (dati fittizi):
+Output excerpt (fictitious data):
 ```sql
 INSERT INTO `credentials` VALUES
 (1,'Admin Portal','admin','Winter2026!','accesso pannello amministrazione interno'),
@@ -55,37 +55,37 @@ INSERT INTO `credentials` VALUES
 ...
 ```
 
-**Risultato**: database intero (struttura + dati) esportato localmente sulla macchina attaccante in pochi secondi, senza che nessun controllo di sicurezza a livello di database lo impedisse.
+**Result**: entire database (structure + data) exported locally to the attacker machine in a few seconds, with no database-level security control preventing it.
 
-## 5. Detection — Incidenti generati automaticamente
+## 5. Detection — Automatically Generated Incidents
 
-Entrambe le regole di detection configurate in Microsoft Sentinel si sono attivate correttamente:
+Both detection rules configured in Microsoft Sentinel fired correctly:
 
-### Incidente 1: Accesso alla tabella credentials sull'honeypot MySQL
-- **Gravità**: Alta
-- **Categoria**: Accesso a credenziali
-- **Prima attività rilevata**: 25 ott 2026, 15:37:48
-- **Ultima attività rilevata**: 26 ott 2026, 13:28:44
-- **Eventi registrati**: query `SELECT * FROM credentials`, `SELECT service_name, username FROM credentials`, `SHOW INDEX FROM credentials`
+### Incident 1: Access to the credentials table on the MySQL honeypot
+- **Severity**: High
+- **Category**: Credential access
+- **First activity detected**: 25 Oct 2026, 15:37:48
+- **Last activity detected**: 26 Oct 2026, 13:28:44
+- **Events recorded**: queries `SELECT * FROM credentials`, `SELECT service_name, username FROM credentials`, `SHOW INDEX FROM credentials`
 
-### Incidente 2: Query esplorative sul database honeypot
-- **Gravità**: Media
-- **Categoria**: Individuazione
-- **Eventi registrati**: `SHOW TABLES FROM corpdb`
+### Incident 2: Exploratory queries on the honeypot database
+- **Severity**: Medium
+- **Category**: Discovery
+- **Events recorded**: `SHOW TABLES FROM corpdb`
 
-**Osservazione sulla timeline**: gli incidenti mostrano attività distribuita su due sessioni separate (pomeriggio del 25 ottobre e mattina del 26 ottobre) — pattern realistico di un attaccante che ritorna più volte sul bersaglio compromesso per continuare l'esplorazione, piuttosto che un singolo evento isolato.
+**Timeline observation**: the incidents show activity spread across two separate sessions (afternoon of 25 October and morning of 26 October) — a realistic pattern of an attacker returning to the compromised target several times to continue exploring, rather than a single isolated event.
 
-![Incidenti generati automaticamente](screenshots/incidents-overview.png)
+![Automatically generated incidents](screenshots/incidents-overview.png)
 
-![Dettaglio dell'incidente con timeline e storia dell'attacco](screenshots/incident-detail.png)
+![Incident detail with timeline and attack story](screenshots/incident-detail.png)
 
-Dettaglio del secondo incidente ("Query esplorative sul database honeypot"), con la spiegazione automatica generata da Microsoft Defender ("Cos'è successo") e la query raw rilevata (`SHOW TABLES FROM corpdb`):
+Detail of the second incident ("Exploratory queries on the honeypot database"), with the automatic explanation generated by Microsoft Defender ("What happened") and the raw query detected (`SHOW TABLES FROM corpdb`):
 
-![Dettaglio secondo incidente con spiegazione automatica](screenshots/incident-2-detail.png)
+![Second incident detail with automatic explanation](screenshots/incident-2-detail.png)
 
-## 6. Contenimento
+## 6. Containment
 
-Verifica che la chiusura delle regole NSG abbia effettivamente isolato la VM:
+Verification that closing the NSG rules actually isolated the VM:
 
 ```bash
 $ nmap -Pn -p 3306,3389 74.241.132.174
@@ -97,12 +97,12 @@ PORT     STATE    SERVICE
 3389/tcp filtered ms-wbt-server
 ```
 
-**Risultato**: nessuna risposta dalle porte precedentemente esposte — isolamento confermato.
+**Result**: no response from the previously exposed ports — isolation confirmed.
 
-## 7. Eradicazione
+## 7. Eradication
 
-Azioni correttive applicate per riportare il sistema a uno stato sicuro:
-- Rimozione dell'account amministratore locale debole creato per il test
-- Disattivazione dell'account Guest
-- Riattivazione del firewall di Windows su tutti i profili
-- Rimozione dell'utente `root@'%'` senza password da MySQL (`DROP USER`)
+Corrective actions applied to return the system to a secure state:
+- Removed the weak local administrator account created for the test
+- Disabled the Guest account
+- Re-enabled the Windows firewall on all profiles
+- Removed the passwordless `root@'%'` user from MySQL (`DROP USER`)

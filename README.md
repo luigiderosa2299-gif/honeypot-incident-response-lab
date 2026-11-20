@@ -1,17 +1,17 @@
 # Honeypot Lab — Live Breach & Incident Response (Azure + Microsoft Sentinel)
 
-> ⚠️ **Contesto**: laboratorio interamente contenuto nel mio ambiente Azure personale (resource group isolato `rg-honeypot-lab`). Dati fittizi, nessuna informazione reale. L'attacco è stato condotto da me stesso dalla mia VM Kali Linux, in modo controllato e autorizzato (stessa sottoscrizione, stesso proprietario). Nessun sistema di terzi è stato coinvolto.
+> ⚠️ **Context**: lab fully contained within my personal Azure environment (isolated resource group `rg-honeypot-lab`). Fictitious data, no real information. The attack was carried out by me from my own Kali Linux VM, in a controlled and authorized manner (same subscription, same owner). No third-party systems were involved.
 
-## 📌 Obiettivo
+## 📌 Objective
 
-Costruire un honeypot realistico in Azure (VM Windows + database MySQL con dati fittizi), esporlo deliberatamente con configurazioni vulnerabili, attaccarlo end-to-end simulando un vero threat actor, e verificare l'intero ciclo di vita dell'incident response — rilevamento, analisi, contenimento, eradicazione — usando Microsoft Sentinel per la detection.
+Build a realistic honeypot in Azure (Windows VM + MySQL database with fictitious data), deliberately expose it with vulnerable configurations, attack it end-to-end simulating a real threat actor, and verify the entire incident response lifecycle — detection, analysis, containment, eradication — using Microsoft Sentinel for detection.
 
-A differenza di un lab "in laboratorio", qui l'infrastruttura di detection ha dovuto rilevare un attacco reale (condotto da me) su un'infrastruttura cloud reale, non un replay di dati statici.
+Unlike a "lab-only" exercise, here the detection infrastructure had to detect a live attack (carried out by me) on real cloud infrastructure, not a replay of static data.
 
-## 🧩 Architettura
+## 🧩 Architecture
 
 ```
-Kali Linux (attaccante)  ──attacco──▶  Azure VM "web-prod-01" (Windows 11, honeypot)
+Kali Linux (attacker)    ───attack──▶ Azure VM "web-prod-01" (Windows 11, honeypot)
                                               │
                                         MySQL 8.0.46 (corpdb)
                                               │
@@ -22,72 +22,72 @@ Kali Linux (attaccante)  ──attacco──▶  Azure VM "web-prod-01" (Windows
                                   Log Analytics Workspace (law-honeypot-lab)
                                               │
                                      Microsoft Sentinel
-                                   (3 regole di detection custom)
+                                   (3 custom detection rules)
                                               │
-                                  Incidenti automatici in Defender XDR
+                                  Automatic incidents in Defender XDR
 ```
 
-## 🛠 Tecnologie e Strumenti
+## 🛠 Technologies and Tools
 
 - **Microsoft Azure**: VM Windows 11 (Standard_D2als_v6), Virtual Network, Network Security Group, Azure Bastion
-- **Microsoft Defender for Cloud**: piano Server (Piano 1) per la protezione della VM
-- **Azure Monitor Agent + Data Collection Rule**: pipeline di raccolta log personalizzata
-- **Log Analytics Workspace**: storage e query KQL
-- **Microsoft Sentinel** (via portale unificato Microsoft Defender): regole di detection custom, gestione incidenti
-- **MySQL Server 8.0.46**: database honeypot con dati fittizi
-- **Kali Linux**: piattaforma di attacco (nmap, mysql client, mysqldump)
+- **Microsoft Defender for Cloud**: Server plan (Plan 1) for VM protection
+- **Azure Monitor Agent + Data Collection Rule**: custom log collection pipeline
+- **Log Analytics Workspace**: storage and KQL queries
+- **Microsoft Sentinel** (via the unified Microsoft Defender portal): custom detection rules, incident management
+- **MySQL Server 8.0.46**: honeypot database with fictitious data
+- **Kali Linux**: attack platform (nmap, mysql client, mysqldump)
 
-## ⚙️ Fasi del laboratorio
+## ⚙️ Lab Phases
 
-### Fase 1-2 — Costruzione dell'honeypot
-- VM Windows 11 creata in un resource group dedicato (`rg-honeypot-lab`), inizialmente senza porte pubbliche esposte
-- Microsoft Defender for Cloud (piano Server) attivato per telemetria di sicurezza nativa Azure — alternativa a Microsoft Defender for Endpoint, che richiederebbe una licenza M365 E5 non disponibile in questo contesto
-- MySQL Server 8.0.46 installato, database `corpdb` popolato con dati fittizi: clienti, ordini, pagamenti, e una tabella `credentials` con password **in chiaro** — cattiva pratica di sicurezza voluta, usata come esca
-- Query log MySQL (`general_query.log`) attivato in modo permanente via file di configurazione (`my.ini`), per registrare ogni connessione e query
+### Phase 1-2 — Building the Honeypot
+- Windows 11 VM created in a dedicated resource group (`rg-honeypot-lab`), initially with no public ports exposed
+- Microsoft Defender for Cloud (Server plan) enabled for Azure-native security telemetry — an alternative to Microsoft Defender for Endpoint, which would require an M365 E5 license not available in this context
+- MySQL Server 8.0.46 installed, `corpdb` database populated with fictitious data: customers, orders, payments, and a `credentials` table with **plaintext** passwords — a deliberate bad security practice, used as bait
+- MySQL query log (`general_query.log`) permanently enabled via configuration file (`my.ini`), to record every connection and query
 
-### Fase 3 — Pipeline di logging verso Sentinel
-- Creato un Log Analytics Workspace dedicato (`law-honeypot-lab`)
-- Creata una tabella personalizzata (`MySQLHoneypotLog_CL`) e una Data Collection Rule che legge `general_query.log` dalla VM e lo inoltra al workspace
-- Verificata la pipeline end-to-end con query KQL di test
+### Phase 3 — Logging Pipeline to Sentinel
+- Created a dedicated Log Analytics Workspace (`law-honeypot-lab`)
+- Created a custom table (`MySQLHoneypotLog_CL`) and a Data Collection Rule that reads `general_query.log` from the VM and forwards it to the workspace
+- Verified the pipeline end-to-end with test KQL queries
 
-### Fase 4 — Scrittura delle detection
-Create 3 regole di rilevamento personalizzate in Microsoft Sentinel, ciascuna mappata a una tattica MITRE ATT&CK:
+### Phase 4 — Writing the Detections
+Created 3 custom detection rules in Microsoft Sentinel, each mapped to a MITRE ATT&CK tactic:
 
-| Regola | Query KQL | Gravità | MITRE ATT&CK |
+| Rule | KQL Query | Severity | MITRE ATT&CK |
 |---|---|---|---|
-| Accesso tabella credentials | `MySQLHoneypotLog_CL \| where RawData has "credentials"` | Alta | Credential Access |
-| Volume connessioni sospette | `... \| summarize ConnectionCount = count() by bin(TimeGenerated, 1m) \| where ConnectionCount > 10` | Media | Discovery |
-| Query esplorative database | `... \| where RawData has_any (dynamic(["SHOW TABLES","DESCRIBE","information_schema"]))` | Media | Discovery |
+| Access to credentials table | `MySQLHoneypotLog_CL \| where RawData has "credentials"` | High | Credential Access |
+| Suspicious connection volume | `... \| summarize ConnectionCount = count() by bin(TimeGenerated, 1m) \| where ConnectionCount > 10` | Medium | Discovery |
+| Database exploratory queries | `... \| where RawData has_any (dynamic(["SHOW TABLES","DESCRIBE","information_schema"]))` | Medium | Discovery |
 
-### Fase 5 — Indebolimento deliberato (Weaken & Expose)
-Per rendere l'honeypot attaccabile:
-- Creato un account amministratore locale con password debole
-- Account Guest abilitato con password debole
-- Disabilitato il firewall di Windows su tutti i profili
-- Creato un utente **root MySQL senza password**, accessibile da qualsiasi host (`'root'@'%'`)
-- Modificato il Network Security Group per esporre le porte 3306 (MySQL) e 3389 (RDP) — limitato al mio IP pubblico per mantenere il lab controllato, invece che aperto a tutto Internet
+### Phase 5 — Deliberate Weakening (Weaken & Expose)
+To make the honeypot attackable:
+- Created a local administrator account with a weak password
+- Enabled the Guest account with a weak password
+- Disabled the Windows firewall on all profiles
+- Created a **MySQL root user with no password**, accessible from any host (`'root'@'%'`)
+- Modified the Network Security Group to expose ports 3306 (MySQL) and 3389 (RDP) — restricted to my public IP to keep the lab controlled, rather than open to the whole Internet
 
-### Fase 6-7 — Attacco e Detection
-Vedi dettaglio completo in [`docs/attack-and-detection.md`](docs/attack-and-detection.md).
+### Phase 6-7 — Attack and Detection
+See full details in [`docs/attack-and-detection.md`](docs/attack-and-detection.md).
 
-Riassunto: scansione di ricognizione (`nmap`), accesso diretto a MySQL come root senza bisogno di indovinare alcuna password, esplorazione del database, esfiltrazione completa con `mysqldump`.
+Summary: reconnaissance scan (`nmap`), direct access to MySQL as root without needing to guess any password, database exploration, full exfiltration with `mysqldump`.
 
-**Risultato**: entrambe le regole di detection si sono attivate automaticamente, generando 2 incidenti in Microsoft Defender:
-- 🔴 **"Accesso alla tabella credentials sull'honeypot MySQL"** — Gravità Alta
-- 🟠 **"Query esplorative sul database honeypot"** — Gravità Media
+**Result**: both detection rules fired automatically, generating 2 incidents in Microsoft Defender:
+- 🔴 **"Access to the credentials table on the MySQL honeypot"** — High severity
+- 🟠 **"Exploratory queries on the honeypot database"** — Medium severity
 
-### Fase 8-9 — Contenimento ed Eradicazione
-- **Contenimento**: rimosse le regole NSG che esponevano la VM — verificato con nmap che le porte risultano nuovamente "filtered"
-- **Eradicazione**: rimosso l'account amministratore debole, disattivato Guest, riattivato il firewall di Windows, rimosso l'utente root MySQL senza password
+### Phase 8-9 — Containment and Eradication
+- **Containment**: removed the NSG rules exposing the VM — verified with nmap that the ports show as "filtered" again
+- **Eradication**: removed the weak administrator account, disabled Guest, re-enabled the Windows firewall, removed the MySQL root user with no password
 
-## 📊 Risultato
+## 📊 Result
 
-Ciclo completo di incident response dimostrato in prima persona, da entrambi i lati:
-- **Red team**: ricognizione → exploitation → scoperta dati → esfiltrazione
-- **Blue team**: pipeline di logging custom → detection engineering → rilevamento automatico → analisi → contenimento → eradicazione
+Full incident response cycle demonstrated first-hand, from both sides:
+- **Red team**: reconnaissance → exploitation → data discovery → exfiltration
+- **Blue team**: custom logging pipeline → detection engineering → automatic detection → analysis → containment → eradication
 
-## 🧱 Osservazioni e limiti
+## 🧱 Observations and Limitations
 
-- L'attacco è stato condotto da un IP noto (il mio), non da un vero threat actor — la detection sul volume di connessioni non è stata esercitata a pieno (avrebbe richiesto un vero scan/brute force automatizzato)
-- Il mapping delle entità (dispositivo) nelle regole Sentinel non è stato completato per un errore temporaneo del portale Defender — le regole funzionano comunque, ma senza arricchimento automatico del contesto dispositivo
-- Microsoft Defender for Endpoint (MDE) non è stato usato per via di una licenza M365 E5 non disponibile — Microsoft Defender for Cloud (piano Server, nativo Azure) si è dimostrata un'alternativa valida e sufficiente per questo scenario
+- The attack was carried out from a known IP (mine), not by a real threat actor — the connection-volume detection was not fully exercised (it would have required a real automated scan/brute force)
+- Entity mapping (device) in the Sentinel rules was not completed due to a temporary Defender portal error — the rules work anyway, but without automatic device context enrichment
+- Microsoft Defender for Endpoint (MDE) was not used because an M365 E5 license was not available — Microsoft Defender for Cloud (Server plan, Azure-native) proved to be a valid and sufficient alternative for this scenario
